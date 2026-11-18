@@ -240,6 +240,15 @@ html:lang(ko) body{word-break:keep-all;overflow-wrap:anywhere}
     <span>倍</span>
   </div>
   <p class="derived">1.00倍＝標準設定の4.4y/秒。ギミック速度とは独立して変更でき、練習中も反映されます。</p>
+  <div class="tunegrid" style="grid-template-columns:1fr 135px">
+    <label for="patternMode">パターン出題方式</label>
+    <select id="patternMode" aria-label="パターン出題方式"><option value="shuffle">8種を均等にシャッフル</option><option value="order">1〜8を順番に</option><option value="fixed">指定パターンを反復</option></select>
+    <label for="patternSelect">指定パターン</label>
+    <select id="patternSelect" aria-label="指定パターン"></select>
+  </div>
+  <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px">解答ルートを表示 <input id="patternReveal" type="checkbox"></label>
+  <p class="derived" id="patternStatus" aria-live="polite">次の出題を準備しています。</p>
+  <p class="derived">8種の基本ルートを登録。シャッフルでは8種を1回ずつ出題します。出題番号を表示し、ルートは必要なときだけ確認できます。参考：<a href="https://github.com/pilsnerdrinker/practice-flood" target="_blank" rel="noopener noreferrer" style="color:#e2bbff">P5フラッド練習</a>。実機の全出現条件は未検証です。</p>
   <div class="tunegrid">
     <label for="fWarn">予兆の表示間隔</label><input id="fWarn" type="number" min="0.2" max="3" step="0.05" value="0.65"><span>秒</span>
     <label for="fHit">着弾の間隔</label><input id="fHit" type="number" min="0.2" max="3" step="0.05" value="0.70"><span>秒</span>
@@ -883,8 +892,42 @@ function clearFlood(){
   for(const mesh of flood.meshes){scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();}
   flood.meshes=[];flood.layout=[];flood.hitSteps.clear();
 }
-function createFloodLayout(){
-  const base=Math.random()<.5?Math.PI/4:-Math.PI/4,first=Math.random()<.5?0:1,clockwise=Math.random()<.5?1:-1;
+// Eight route candidates from the common four-column flood practice model.
+// Each entry was checked against the safe sequence at A/B/C/D (r=10y).
+// These are practice patterns; a complete in-game pattern census is not claimed.
+const FLOOD_PATTERNS=[
+  {route:'B → C → D',deg:-45,first:1,clockwise:-1},
+  {route:'B → A → D',deg:45,first:1,clockwise:1},
+  {route:'D → A → B',deg:-45,first:0,clockwise:-1},
+  {route:'D → C → B',deg:45,first:0,clockwise:1},
+  {route:'A → D → C',deg:-45,first:1,clockwise:1},
+  {route:'C → B → A',deg:-45,first:0,clockwise:1},
+  {route:'C → D → A',deg:45,first:1,clockwise:-1},
+  {route:'A → B → C',deg:45,first:0,clockwise:-1}
+];
+let patternBag=[],patternOrder=0,patternIndex=-1;
+for(let i=0;i<FLOOD_PATTERNS.length;i++){
+  const o=document.createElement('option');o.value=String(i);o.textContent=`${String(i+1).padStart(2,'0')}：${FLOOD_PATTERNS[i].route}`;$('patternSelect').appendChild(o);
+}
+function updatePatternControls(){
+  $('patternSelect').disabled=$('patternMode').value!=='fixed';
+  $('patternStatus').textContent=patternIndex<0?'次の出題を準備しています。':`今回：パターン ${String(patternIndex+1).padStart(2,'0')}`+($('patternReveal').checked?` ／ ${FLOOD_PATTERNS[patternIndex].route}`:' ／ ルート非表示');
+}
+for(const id of ['patternMode','patternSelect','patternReveal'])$(id).addEventListener('change',updatePatternControls);
+updatePatternControls();
+function chooseFloodPattern(){
+  const mode=$('patternMode').value;
+  if(mode==='fixed')return Math.max(0,Math.min(7,Number($('patternSelect').value)||0));
+  if(mode==='order')return patternOrder++%FLOOD_PATTERNS.length;
+  if(!patternBag.length){
+    patternBag=Array.from({length:FLOOD_PATTERNS.length},(_,i)=>i);
+    for(let i=patternBag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[patternBag[i],patternBag[j]]=[patternBag[j],patternBag[i]];}
+    if(patternIndex===patternBag[0]&&patternBag.length>1)[patternBag[0],patternBag[1]]=[patternBag[1],patternBag[0]];
+  }
+  return patternBag.shift();
+}
+function createFloodLayout(pattern){
+  const base=pattern.deg*Math.PI/180,first=pattern.first,clockwise=pattern.clockwise;
   return Array.from({length:4},(_,i)=>{
     const a=base+clockwise*i*Math.PI/2,normal=[Math.cos(a),Math.sin(a)];
     const side=(first+i)%2,width=ARENA_R/2;
@@ -906,7 +949,9 @@ function startRun(){
   player.userData.torso.position.y=0;
   flood.warnInterval=Math.max(.2,+($('fWarn').value)||.65);flood.hitInterval=Math.max(.2,+($('fHit').value)||.7);flood.lead=Math.max(.2,+($('fLead').value)||1);
   flood.attackStart=flood.warnStart+4*flood.warnInterval+flood.lead;
-  flood.layout=createFloodLayout();
+  patternIndex=chooseFloodPattern();
+  flood.layout=createFloodLayout(FLOOD_PATTERNS[patternIndex]);
+  updatePatternControls();
   for(const w of flood.layout)for(const [min,max] of w.lanes){
     const material=new THREE.MeshBasicMaterial({color:0xffb54e,transparent:true,opacity:.68,depthWrite:false,side:THREE.DoubleSide});
     const mesh=new THREE.Mesh(floodStripeGeometry(w.normal,min,max),material);mesh.visible=false;scene.add(mesh);flood.meshes.push(mesh);w.meshes.push(mesh);
