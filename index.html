@@ -233,6 +233,13 @@ html:lang(ko) body{word-break:keep-all;overflow-wrap:anywhere}
     <span>倍</span>
   </div>
   <p class="derived">0.50倍＝半速 ／ 1.00倍＝実機を目指した基準 ／ 2.00倍＝倍速。練習中も変更できます。</p>
+  <label for="moveSpeed" style="display:block;margin-top:12px;font-weight:700">キャラクター移動速度 <output id="moveSpeedLabel">1.00倍</output></label>
+  <div class="speedControls">
+    <input id="moveSpeed" type="range" min="0.25" max="2.50" step="0.05" value="1" aria-label="キャラクター移動速度 スライダー">
+    <input id="moveSpeedNum" type="number" min="0.25" max="2.50" step="0.05" value="1.00" aria-label="キャラクター移動速度 数値入力">
+    <span>倍</span>
+  </div>
+  <p class="derived">1.00倍＝標準設定の4.4y/秒。ギミック速度とは独立して変更でき、練習中も反映されます。</p>
   <div class="tunegrid">
     <label for="fWarn">予兆の表示間隔</label><input id="fWarn" type="number" min="0.2" max="3" step="0.05" value="0.65"><span>秒</span>
     <label for="fHit">着弾の間隔</label><input id="fHit" type="number" min="0.2" max="3" step="0.05" value="0.70"><span>秒</span>
@@ -485,7 +492,21 @@ try{const s=JSON.parse(localStorage.getItem('exa3dCam9')||'null'); if(s) for(con
 function camHome(){ cam.yaw=-camSet.iHead*Math.PI/180; cam.pitch=camSet.iPitch*Math.PI/180; cam.dist=camSet.iDist; clampDist(); }
 function clampDist(){ if(camSet.zMin>camSet.zMax) camSet.zMax=camSet.zMin; cam.dist=Math.min(camSet.zMax,Math.max(camSet.zMin,cam.dist)); camSet.cDist=cam.dist; }
 function saveCam(){try{localStorage.setItem('exa3dCam9',JSON.stringify(camSet))}catch(e){}}
-function showCam(){ for(const k in CAM_DEFAULT){ $(k).value=camSet[k]; $(k+'v').textContent=(+camSet[k]).toFixed(CAM_INT.has(k)?0:(k==='mS'||k==='bS'||k==='pS'?2:1))+T(CAM_UNITS[k]); } }
+function showCam(){
+  for(const k in CAM_DEFAULT){ $(k).value=camSet[k]; $(k+'v').textContent=(+camSet[k]).toFixed(CAM_INT.has(k)?0:(k==='mS'||k==='bS'||k==='pS'?2:1))+T(CAM_UNITS[k]); }
+  const ratio=camSet.pV/CAM_DEFAULT.pV;
+  $('moveSpeed').value=String(Math.max(.25,Math.min(2.5,ratio)));
+  $('moveSpeedNum').value=ratio.toFixed(2);
+  $('moveSpeedLabel').textContent=ratio.toFixed(2)+'倍（'+camSet.pV.toFixed(2)+'y/秒）';
+}
+function setMoveSpeed(raw){
+  const value=Number(raw);if(!Number.isFinite(value))return;
+  const ratio=Math.round(Math.max(.25,Math.min(2.5,value))*20)/20;
+  camSet.pV=Math.round(CAM_DEFAULT.pV*ratio*1000)/1000;
+  showCam();saveCam();
+}
+$('moveSpeed').addEventListener('input',e=>setMoveSpeed(e.target.value));
+$('moveSpeedNum').addEventListener('change',e=>setMoveSpeed(e.target.value));
 function applyCam(){ camera.fov=camSet.cFov; camera.updateProjectionMatrix(); placeMarkers(camSet.mR,camSet.mS); placeBoss(camSet.bS,camSet.bH,camSet.bHit); player.scale.setScalar(camSet.pS); }
 for(const k in CAM_DEFAULT) $(k).addEventListener('input',()=>{
   camSet[k]=parseFloat($(k).value);
