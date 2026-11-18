@@ -250,12 +250,14 @@ html:lang(ko) body{word-break:keep-all;overflow-wrap:anywhere}
   <p class="derived" id="patternStatus" aria-live="polite">次の出題を準備しています。</p>
   <p class="derived">8種の基本ルートを登録。シャッフルでは8種を1回ずつ出題します。出題番号を表示し、ルートは必要なときだけ確認できます。参考：<a href="https://github.com/pilsnerdrinker/practice-flood" target="_blank" rel="noopener noreferrer" style="color:#e2bbff">P5フラッド練習</a>。実機の全出現条件は未検証です。</p>
   <div class="tunegrid">
-    <label for="fWarn">予兆の表示間隔</label><input id="fWarn" type="number" min="0.2" max="3" step="0.05" value="0.65"><span>秒</span>
+    <label for="fCast">フラッドの詠唱時間</label><input id="fCast" type="number" min="1" max="10" step="0.05" value="6.00"><span>秒</span>
+    <label for="fWarnStart">最初の予兆（詠唱3秒基準）</label><input id="fWarnStart" type="number" min="0" max="5" step="0.05" value="0.40"><span>秒</span>
+    <label for="fWarn">予兆間隔（自動計算）</label><input id="fWarn" type="number" min="0" step="0.001" value="0.925" disabled><span>秒</span>
     <label for="fHit">着弾の間隔</label><input id="fHit" type="number" min="0.2" max="3" step="0.05" value="0.70"><span>秒</span>
-    <label for="fLead">最後の予兆→初弾</label><input id="fLead" type="number" min="0.2" max="5" step="0.05" value="1.00"><span>秒</span>
+    <label for="fLead">詠唱完了→初弾（0＝同時）</label><input id="fLead" type="number" min="0" max="5" step="0.05" value="0"><span>秒</span>
   </div>
-  <p class="derived">予兆は1〜4を順番に表示し、次が出ると前が消えます。着弾順も1〜4です。猪方式の中央横断を自由に練習できます。</p>
-  <p class="derived">※ 1.00倍の秒数・判定幅は攻略記述を基にした暫定値です。実際の戦闘動画・ログでの計測前のため、完全な実機再現ではありません。範囲は30y円形フィールドの4等分（1列7.5y）として描画しています。</p>
+  <p class="derived">黄色AoE①〜④の予兆は詠唱75%までにすべて表示し終わり、詠唱100%と同時に1発目が着弾します。詠唱を長くすると予兆間隔も比例して長くなります。</p>
+  <p class="derived">※ 添付の実機動画を参考に予兆を詠唱中へ移しました。1.00倍の秒数・判定幅はまだ暫定値です。範囲は30y円形フィールドの4等分（1列7.5y）として描画しています。</p>
   <p class="derived">3Dモデル・フィールドの基盤：<a style="color:#e2bbff" href="https://github.com/motunikomi216/kefkaP5ekusa_sim" target="_blank" rel="noopener noreferrer">Motu Nikomi / MIT License</a></p>
 </details>
 
@@ -864,7 +866,7 @@ function updateRun(dt){
 // ---------- Chaotic Flood: four independently telegraphed lane groups ----------
 // The source trainer's arena, player, camera and waymarks are preserved.
 // Each new warning replaces the preceding warning. Attack order follows warning order.
-const flood={layout:[],meshes:[],warnInterval:.65,hitInterval:.7,lead:1,warnStart:2.1,attackStart:0,hitSteps:new Set(),speed:1};
+const flood={layout:[],meshes:[],warnInterval:.4625,hitInterval:.7,lead:0,warnStart:.4,attackStart:0,hitSteps:new Set(),speed:1};
 function setFloodSpeed(raw){
   const n=Number(raw);if(!Number.isFinite(n))return;
   flood.speed=Math.round(Math.max(.25,Math.min(2.5,n))*20)/20;
@@ -938,7 +940,7 @@ function startRun(){
   // Fatal hits detach the pig's meshes from its skeleton and disable movement.
   // Reassemble the character before resetting its position or starting a retry.
   restorePig();
-  clearFlood();run.active=true;run.t=0;run.hits=0;run.castEnd=2;run.swirl=null;run.waves=[];run.blasts=[];
+  clearFlood();run.active=true;run.t=0;run.hits=0;run.swirl=null;run.waves=[];run.blasts=[];
   // Each retry must restore the player as well as the mechanic.
   player.position.set(0,0,7);
   facing=Math.PI;
@@ -947,8 +949,18 @@ function startRun(){
   player.userData.sw=0;
   for(const limb of [...player.userData.legs,...player.userData.arms])limb.rotation.x=0;
   player.userData.torso.position.y=0;
-  flood.warnInterval=Math.max(.2,+($('fWarn').value)||.65);flood.hitInterval=Math.max(.2,+($('fHit').value)||.7);flood.lead=Math.max(.2,+($('fLead').value)||1);
-  flood.attackStart=flood.warnStart+4*flood.warnInterval+flood.lead;
+  const timing=(id,fallback,minimum)=>{const n=Number($(id).value);return Number.isFinite(n)?Math.max(minimum,n):fallback;};
+  // The full sequence of four yellow telegraphs finishes at 75% cast.
+  // The first damage check coincides with 100% cast by default.
+  const castDuration=timing('fCast',3,1);
+  const castScale=castDuration/3;
+  run.castEnd=castDuration;
+  flood.warnStart=Math.min(timing('fWarnStart',.4,0)*castScale,castDuration*.5);
+  flood.warnInterval=(castDuration*.75-flood.warnStart)/4;
+  $('fWarn').value=flood.warnInterval.toFixed(3);
+  flood.hitInterval=timing('fHit',.7,.2);
+  flood.lead=timing('fLead',0,0);
+  flood.attackStart=run.castEnd+flood.lead;
   patternIndex=chooseFloodPattern();
   flood.layout=createFloodLayout(FLOOD_PATTERNS[patternIndex]);
   updatePatternControls();
